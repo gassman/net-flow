@@ -21,6 +21,7 @@ const opts = new Settings();
 
 opts.minPacketsPerFlow = 20;
 opts.maxPacketsPerFLow = 50;
+opts.opts.labelsToAdd = new Map([["Benign", true]]); 
 opts.inputPcapFilename = "/home/user/test.pcap";
 opts.outputCsvFilename = "/home/user/test_pcap_stats.csv";
 
@@ -39,6 +40,6 @@ There are around 39 statistical values gathered for each flow including:
 * Flow packet size
 * Flow duration
 * Flow length
-Covering forward, reverse and total statistics and including minimum, maximum, mean and standard deviation values for some metrics.
+Covering forward, reverse and total statistics and including minimum, maximum, mean and standard deviation values for some metrics. Optionally set a label to classify the output before importing the data into a machine learning tool
 
 Outut is  in CSV format and suitable for consumptions within Pandas or other frameworks accepting CSV input.

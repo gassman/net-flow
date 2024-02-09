@@ -5,10 +5,11 @@ import {MinMax, StdDev, Mean} from "./maths";
 import { LinkLayer } from "./network";
 
 export class Settings {
-    maxPacketsPerFLow = 100;
+    maxPacketsPerFLow = 82;
     minPacketsPerFlow = 15;
     inputPcapFilename:string = "";
     outputCsvFilename:string = "";
+    labelsToAdd: Map<string, string | number | boolean > = new Map();
 }
 
 // Enumerates traffic flow direction
@@ -57,7 +58,7 @@ export class PacketVector {
     }
 
     toCsvString(): string {
-       return `${this.srcIp},${this.dstIp},${this.protocol},${this.srcPort},${this.dstPort}`
+       return `${this.key()},${this.srcIp},${this.dstIp},${this.protocol},${this.srcPort},${this.dstPort}`
     }
 }
 
@@ -91,9 +92,9 @@ export class PacketStats {
     }
 
     // CSV report header
-    static header(): string {
+    static header(labels:Map<string,string|number|boolean>): string {
         let headerStr = "";
-        const headerElements = ["SrcIP", "DstIP", "Protocol", "SrcPort", 
+        const headerElements = ["Key","SrcIP", "DstIP", "Protocol", "SrcPort", 
                                 "DstPort", "FlowDuration", "FlowLength", 
                                 "FwdFlowLength", "RevFlowLength", "PacketSizeTotal",
                                 "PacketSizeMean", "PacketSizeStd", "PacketSizeMin",
@@ -110,13 +111,16 @@ export class PacketStats {
         for( let i=0; i < headerElements.length; i++ ) {
             headerStr += headerElements[i] + ",";
         }
+        for( const key of labels.keys() ) {
+            headerStr += key + ",";
+        }
         headerStr=headerStr.slice(0, -1);
         headerStr += "\n";
         return headerStr;
     }
 
     // CSV row element
-    row(): string {
+    row(labels:Map<string,string|number|boolean>): string {
         let rowStr = "";
         const rowElements = [this.flowDuration, this.flowLength, this.fwdFlowLength, this.revFlowLength,
             this.packetSize.total, this.packetSize.mean, this.packetSize.stdDev, this.packetSize.min,
@@ -132,6 +136,10 @@ export class PacketStats {
         for( let i=0; i < rowElements.length; i++ ) {
             rowStr += rowElements[i] + ",";
         }
+        for( const value of labels.values() ) {
+            rowStr += value + ",";
+        }
+
         rowStr = rowStr.slice(0,-1);
         return this.packetVec.toCsvString() + `,${rowStr}\n`;
     }
@@ -156,6 +164,10 @@ export class PcapPacketHeader {
 
     timeInMilliseconds(): number {
         return Math.round((this.tv_sec * 1000.0 ) + (this.tv_usec / 1000.0))
+    }
+
+    timeInMicroseconds(): number {
+        return Math.round((this.tv_sec * 1000000.0 ) + this.tv_usec)
     }
 
     length(): number {
@@ -216,10 +228,10 @@ export class Flow {
                 } else {
                     outFileName = this.settings.outputCsvFilename;
                 }
-                fs.writeFileSync(outFileName, PacketStats.header());
+                fs.writeFileSync(outFileName, PacketStats.header(this.settings.labelsToAdd));
                 this.flows.forEach(( pkt: PacketStats ) => {
                     if( pkt.minPacketsBool )
-                        fs.appendFileSync(outFileName, pkt.row());
+                        fs.appendFileSync(outFileName, pkt.row(this.settings.labelsToAdd));
                 });
                 resolve(true);
             })
@@ -256,16 +268,16 @@ export class Flow {
                 pktStats.fwdPacketSize.total = pph.length();
                 pktStats.fwdPacketSize.mean = pph.length() * 1.0;
                 pktStats.fwdFlowLength = 1;
-                pktStats.fwdFlowPrevTime = pph.timeInMilliseconds();
+                pktStats.fwdFlowPrevTime = pph.timeInMicroseconds();
             } else {
                 pktStats.revPacketSizes.push(pph.length());
                 pktStats.revPacketSize.total = pph.length();
                 pktStats.revPacketSize.mean = pph.length() * 1.0;
                 pktStats.revFlowLength = 1;
-                pktStats.revFlowPrevTime = pph.timeInMilliseconds();
+                pktStats.revFlowPrevTime = pph.timeInMicroseconds();
             }
-            pktStats.flowStartTime = pph.timeInMilliseconds();
-            pktStats.flowPrevTime = pph.timeInMilliseconds();
+            pktStats.flowStartTime = pph.timeInMicroseconds();
+            pktStats.flowPrevTime = pph.timeInMicroseconds();
             pktStats.flowLength = 1;
             this.flows.set(key, pktStats);
         } else {
@@ -276,16 +288,16 @@ export class Flow {
             }
             // Only update if the maximum packets hasn't been reached
             if ( pktStats.flowLength < this.settings.maxPacketsPerFLow ) {
-                const currInterArrivalTime = pph.timeInMilliseconds() - pktStats.flowPrevTime;
+                const currInterArrivalTime = pph.timeInMicroseconds() - pktStats.flowPrevTime;
                 pktStats.packetSizes.push(pph.length())
                 pktStats.intArrTimes.push(currInterArrivalTime);
                 if ( direction === Direction.Forward ) {
                     pktStats.fwdPacketSizes.push(pph.length());
                     pktStats.fwdFlowLength += 1;
                     if ( pktStats.fwdFlowLength === 1 ) {
-                        pktStats.fwdFlowPrevTime = pph.timeInMilliseconds();
+                        pktStats.fwdFlowPrevTime = pph.timeInMicroseconds();
                     } else {
-                        const curFwdInterArrivalTime = pph.timeInMilliseconds() - pktStats.fwdFlowPrevTime;
+                        const curFwdInterArrivalTime = pph.timeInMicroseconds() - pktStats.fwdFlowPrevTime;
                         pktStats.fwdIntArrTime.total += curFwdInterArrivalTime;
                         pktStats.fwdIntArrTimes.push(curFwdInterArrivalTime);
                         pktStats.fwdIntArrTime.mean = Mean(pktStats.fwdIntArrTimes);
@@ -299,16 +311,16 @@ export class Flow {
                         [min,max] = MinMax(pktStats.fwdPacketSizes);
                         pktStats.fwdPacketSize.min = min;
                         pktStats.fwdPacketSize.max = max;
-                        pktStats.fwdFlowPrevTime = pph.timeInMilliseconds();
+                        pktStats.fwdFlowPrevTime = pph.timeInMicroseconds();
                     }
                 }
                 if ( direction === Direction.Reverse ) {
                     pktStats.revPacketSizes.push(pph.length());
                     pktStats.revFlowLength += 1;
                     if ( pktStats.revFlowLength === 1 ) {
-                        pktStats.revFlowPrevTime = pph.timeInMilliseconds();
+                        pktStats.revFlowPrevTime = pph.timeInMicroseconds();
                     } else {
-                        const curRevInterArrivalTime = pph.timeInMilliseconds() - pktStats.revFlowPrevTime;
+                        const curRevInterArrivalTime = pph.timeInMicroseconds() - pktStats.revFlowPrevTime;
                         pktStats.revIntArrTime.total += curRevInterArrivalTime;
                         pktStats.revIntArrTimes.push(curRevInterArrivalTime);
                         pktStats.revIntArrTime.mean = Mean(pktStats.revIntArrTimes);
@@ -322,10 +334,10 @@ export class Flow {
                         [min, max] = MinMax(pktStats.revPacketSizes);
                         pktStats.revPacketSize.min = min;
                         pktStats.revPacketSize.max = max;
-                        pktStats.revFlowPrevTime = pph.timeInMilliseconds();
+                        pktStats.revFlowPrevTime = pph.timeInMicroseconds();
                     }
                 }
-                pktStats.flowDuration = pph.timeInMilliseconds() - pktStats.flowStartTime;
+                pktStats.flowDuration = pph.timeInMicroseconds() - pktStats.flowStartTime;
                 pktStats.flowLength += 1;
                 const currInterArrTimes = pktStats.fwdIntArrTimes.concat(pktStats.revIntArrTimes);
                 pktStats.intArrTime.total = pktStats.fwdIntArrTime.total + pktStats.revIntArrTime.total;
@@ -336,7 +348,7 @@ export class Flow {
                     pktStats.intArrTime.max = max;
                     pktStats.intArrTime.mean = Mean(currInterArrTimes);
                 }
-                pktStats.flowPrevTime = pph.timeInMilliseconds();
+                pktStats.flowPrevTime = pph.timeInMicroseconds();
                 pktStats.packetSize.total = pktStats.fwdPacketSize.total + pktStats.revPacketSize.total;
                 pktStats.packetSize.mean = Mean(pktStats.packetSizes);
                 const [min, max] = MinMax(pktStats.packetSizes)

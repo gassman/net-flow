@@ -2,8 +2,8 @@
   "name": "@gassmin/net-flow",
   "version": "0.1.0",
   "description": "Parse PCAP files to produce flow statistical analysis",
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
